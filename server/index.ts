@@ -1,8 +1,12 @@
 import cors from "cors";
 import dotenv from "dotenv";
 import express, { type NextFunction, type Request, type Response } from "express";
-import { testMiroConnection, type MiroBoard } from "./miro";
-import { analyzeScenario, testQwenConnection } from "./qwen";
+import {
+  testMiroConnection,
+  type MiroBoard,
+  upsertScenarioMap,
+} from "./miro";
+import { analyzeScenario, reanalyzeWithAssumptionChange, testQwenConnection } from "./qwen";
 
 dotenv.config({ path: ".env.local" });
 
@@ -31,6 +35,11 @@ function safeErrorMessage(error: unknown, service: "Qwen" | "Miro"): string {
 
   if (status === 401) return `${service} rejected the configured credentials.`;
   if (status === 403) return `${service} denied access to the requested resource.`;
+  if (status === 400 || status === 422) {
+    return service === "Qwen"
+      ? "Qwen rejected the request. Verify that QWEN_MODEL is available to this API key."
+      : "Miro rejected the request. Check the board ID and token permissions.";
+  }
   if (status === 404) {
     return service === "Miro"
       ? "Miro could not find the configured board."
@@ -60,7 +69,7 @@ function safeErrorMessage(error: unknown, service: "Qwen" | "Miro"): string {
 
 function requiredVariables(): Record<string, boolean> {
   return {
-    DASHSCOPE_API_KEY: Boolean(process.env.DASHSCOPE_API_KEY),
+    MODELSCOPE_API_KEY: Boolean(process.env.MODELSCOPE_API_KEY),
     QWEN_MODEL: Boolean(process.env.QWEN_MODEL?.trim()),
     MIRO_ACCESS_TOKEN: Boolean(process.env.MIRO_ACCESS_TOKEN),
     MIRO_BOARD_ID: Boolean(process.env.MIRO_BOARD_ID),
@@ -133,6 +142,108 @@ app.post(
   },
 );
 
+app.post(
+  "/api/analyze-and-visualize",
+  async (request: Request, response: Response) => {
+    const scenario: unknown = request.body?.scenario;
+    if (typeof scenario !== "string" || scenario.trim().length === 0) {
+      response.status(400).json({
+        error: "Provide a non-empty scenario string.",
+      });
+      return;
+    }
+    if (scenario.length > 10000) {
+      response.status(400).json({
+        error: "Scenario must be 10,000 characters or fewer.",
+      });
+      return;
+    }
+
+    let analysis;
+    try {
+      analysis = await analyzeScenario(scenario.trim());
+    } catch (error) {
+      response.status(502).json({
+        error: safeErrorMessage(error, "Qwen"),
+      });
+      return;
+    }
+
+    try {
+      const miro = await upsertScenarioMap(analysis);
+      response.json({ analysis, miro });
+    } catch (error) {
+      response.status(502).json({
+        error: safeErrorMessage(error, "Miro"),
+        analysis,
+      });
+    }
+  },
+);
+
+app.post(
+  "/api/update-assumption",
+  async (request: Request, response: Response) => {
+    const { scenario, previousAnalysis, assumption } = request.body as {
+      scenario?: unknown;
+      previousAnalysis?: unknown;
+      assumption?: { previous?: unknown; updated?: unknown };
+    };
+
+    if (typeof scenario !== "string" || scenario.trim().length === 0) {
+      response.status(400).json({ error: "Provide a non-empty scenario string." });
+      return;
+    }
+    if (scenario.length > 10000) {
+      response.status(400).json({ error: "Scenario must be 10,000 characters or fewer." });
+      return;
+    }
+    if (
+      typeof previousAnalysis !== "object" ||
+      previousAnalysis === null ||
+      Array.isArray(previousAnalysis)
+    ) {
+      response.status(400).json({ error: "Provide the previousAnalysis object." });
+      return;
+    }
+    if (
+      typeof assumption?.previous !== "string" ||
+      assumption.previous.trim().length === 0 ||
+      typeof assumption?.updated !== "string" ||
+      assumption.updated.trim().length === 0
+    ) {
+      response.status(400).json({
+        error: "Provide assumption.previous and assumption.updated strings.",
+      });
+      return;
+    }
+
+    let analysis;
+    try {
+      analysis = await reanalyzeWithAssumptionChange(
+        scenario.trim(),
+        previousAnalysis as Parameters<typeof reanalyzeWithAssumptionChange>[1],
+        assumption.previous.trim(),
+        assumption.updated.trim(),
+      );
+    } catch (error) {
+      response.status(502).json({ error: safeErrorMessage(error, "Qwen") });
+      return;
+    }
+
+    try {
+      const miro = await upsertScenarioMap(analysis);
+      response.json({ analysis, miro, assumptionChanged: { previous: assumption.previous, updated: assumption.updated } });
+    } catch (error) {
+      response.status(502).json({
+        error: safeErrorMessage(error, "Miro"),
+        analysis,
+        assumptionChanged: { previous: assumption.previous, updated: assumption.updated },
+      });
+    }
+  },
+);
+
 app.use(
   (
     error: unknown,
@@ -161,6 +272,6 @@ app.use(
   },
 );
 
-app.listen(port, () => {
-  console.log(`Qwen What-If API listening on http://localhost:${port}`);
+app.listen(port, "127.0.0.1", () => {
+  console.log(`Qwen What-If API listening on http://127.0.0.1:${port}`);
 });
