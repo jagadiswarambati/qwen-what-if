@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useReducer, useRef, useState } from "react";
 
@@ -570,7 +570,7 @@ export default function ScenarioConsole() {
                   </h2>
                   <button
                     type="button"
-                    onClick={showRaw}
+                    onClick={setShowRaw}
                     className="text-xs text-zinc-400 underline hover:no-underline dark:text-zinc-500"
                   >
                     {showRaw ? "Hide" : "View"} raw JSON
@@ -608,7 +608,7 @@ export default function ScenarioConsole() {
                       ))}
                   </div>
                   <p className="mt-2 text-xs text-zinc-400 dark:text-zinc-500">
-                    Hover a chip and click "Change" to simulate a what-if.
+                    Hover a chip and click &ldquo;Change&rdquo; to simulate a what-if.
                   </p>
                 </SectionCard>
 
