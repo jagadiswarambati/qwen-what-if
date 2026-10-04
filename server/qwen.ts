@@ -1,5 +1,7 @@
 import OpenAI from "openai";
 import {
+  assumptionChangeSystemPrompt,
+  assumptionChangeUserPrompt,
   scenarioAnalysisSystemPrompt,
   scenarioAnalysisUserPrompt,
 } from "./prompts";
@@ -15,12 +17,12 @@ export interface ScenarioAnalysis {
   fragileAssumptions: string[];
 }
 
-const qwenBaseURL = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1";
+const qwenBaseURL = "https://api-inference.modelscope.ai/v1";
 
 function getClient(): OpenAI {
-  const apiKey = process.env.DASHSCOPE_API_KEY;
+  const apiKey = process.env.MODELSCOPE_API_KEY;
   if (!apiKey) {
-    throw new Error("Missing DASHSCOPE_API_KEY.");
+    throw new Error("Missing MODELSCOPE_API_KEY.");
   }
   return new OpenAI({ apiKey, baseURL: qwenBaseURL });
 }
@@ -90,6 +92,36 @@ export async function analyzeScenario(
     messages: [
       { role: "system", content: scenarioAnalysisSystemPrompt },
       { role: "user", content: scenarioAnalysisUserPrompt(scenario) },
+    ],
+  });
+  const content = completion.choices[0]?.message.content;
+
+  if (typeof content !== "string" || content.length === 0) {
+    throw new Error("Qwen returned an empty response.");
+  }
+
+  return parseScenarioAnalysis(content);
+}
+
+export async function reanalyzeWithAssumptionChange(
+  scenario: string,
+  previousAnalysis: ScenarioAnalysis,
+  previousAssumption: string,
+  updatedAssumption: string,
+): Promise<ScenarioAnalysis> {
+  const completion = await getClient().chat.completions.create({
+    model: getModel(),
+    messages: [
+      { role: "system", content: assumptionChangeSystemPrompt },
+      {
+        role: "user",
+        content: assumptionChangeUserPrompt(
+          scenario,
+          previousAnalysis,
+          previousAssumption,
+          updatedAssumption,
+        ),
+      },
     ],
   });
   const content = completion.choices[0]?.message.content;
