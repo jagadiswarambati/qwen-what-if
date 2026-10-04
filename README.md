@@ -5,13 +5,12 @@ The browser only calls the local API; API keys and access tokens remain server-s
 
 ## Configuration
 
-Add these values to `.env.local` in the project root. Use a Qwen model available
-to your DashScope account for `QWEN_MODEL`; the application does not assume a
-model name.
+Add these values to `.env.local` in the project root. The Qwen integration uses
+the organizer-provided ModelScope-compatible endpoint and model.
 
 ```dotenv
-DASHSCOPE_API_KEY=
-QWEN_MODEL=
+MODELSCOPE_API_KEY=
+QWEN_MODEL=Qwen-Ambassador/Qwen3.7-Max
 MIRO_ACCESS_TOKEN=
 MIRO_BOARD_ID=uXjVEekclPk=
 ```
@@ -38,8 +37,9 @@ port.
   configured Miro board name and ID. This makes a small live Qwen request.
 - `POST /api/analyze` — accepts `{"scenario":"..."}` and returns validated
   structured JSON from Qwen.
+- `POST /api/analyze-and-visualize` — analyzes a scenario with Qwen, then
+  creates or updates a deterministic six-card Miro map with connecting arrows.
 
-`server/miro.ts` also contains `upsertScenarioSummary`, which creates a single
-readable summary sticky note or updates an existing sticky note when its item ID
-is supplied. It is a foundation for the later board visualization and is not
-called by the connection test or analysis endpoint.
+Map cards use stable board-visible markers so subsequent calls update the same
+visualization. The endpoint returns the board ID and all sticky-note/connector
+item IDs.
